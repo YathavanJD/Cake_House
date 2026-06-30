@@ -8,10 +8,14 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ===== FIX 1: Trust proxy (Resolves the rate-limit warning) =====
+// This is essential when running behind a proxy like Render's load balancer.
+app.set('trust proxy', true);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files
+// Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Basic protection against form spam/abuse
@@ -21,7 +25,15 @@ const inquiryLimiter = rateLimit({
   message: { ok: false, error: 'Too many inquiries sent. Please try again later.' }
 });
 
-// ===== Mail transporter =====
+// ===== Mail transporter with DEBUG LOGGING =====
+console.log('--- SMTP Configuration ---');
+console.log('Host:', process.env.SMTP_HOST);
+console.log('Port:', process.env.SMTP_PORT);
+console.log('Secure:', process.env.SMTP_SECURE === 'true');
+console.log('User:', process.env.SMTP_USER);
+// Password is intentionally not logged for security
+console.log('--------------------------');
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: Number(process.env.SMTP_PORT) || 587,
@@ -29,15 +41,23 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
+  },
+  // Adding a timeout to prevent hanging
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+});
+
+// Verify SMTP connection and log the result
+transporter.verify((err) => {
+  if (err) {
+    console.error('❌ SMTP connection failed:', err.message);
+    console.error('Please check your SMTP_USER and SMTP_PASS in Environment Variables.');
+  } else {
+    console.log('✅ SMTP server is ready to send mail.');
   }
 });
 
-// Verify SMTP connection
-transporter.verify((err) => {
-  if (err) console.error('❌ SMTP connection failed:', err.message);
-  else console.log('✅ SMTP server ready to send mail');
-});
-
+// Helper to escape user input for HTML email
 function escapeHtml(str = '') {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -62,7 +82,6 @@ app.post('/api/inquiry', inquiryLimiter, async (req, res) => {
     const mailOptions = {
       from: `"Cake House Website" <${process.env.SMTP_USER}>`,
       to: process.env.OWNER_EMAIL || process.env.SMTP_USER,
-      replyTo: undefined,
       subject: `New Cake Inquiry — ${cakeType} (${name})`,
       text:
         `New inquiry from the Cake House website\n\n` +
@@ -89,11 +108,11 @@ app.post('/api/inquiry', inquiryLimiter, async (req, res) => {
     res.json({ ok: true, message: 'Inquiry sent successfully.' });
   } catch (err) {
     console.error('Error sending inquiry email:', err);
-    res.status(500).json({ ok: false, error: 'Failed to send inquiry. Please try again later.' });
+    res.status(500).json({ ok: false, error: 'Failed to send inquiry. Please try again later or call us directly.' });
   }
 });
 
-// Health check
+// Health check endpoint
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
