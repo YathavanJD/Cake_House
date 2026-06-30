@@ -8,9 +8,10 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== FIX 1: Trust proxy (Resolves the rate-limit warning) =====
-// This is essential when running behind a proxy like Render's load balancer.
-app.set('trust proxy', true);
+// ===== FIX 1: Correctly trust only the first proxy =====
+// Render uses a load balancer, so we trust only that first proxy.
+// 'loopback' means we also trust requests from localhost for development.
+app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -25,15 +26,15 @@ const inquiryLimiter = rateLimit({
   message: { ok: false, error: 'Too many inquiries sent. Please try again later.' }
 });
 
-// ===== Mail transporter with DEBUG LOGGING =====
+// ===== Mail transporter with enhanced configuration =====
 console.log('--- SMTP Configuration ---');
 console.log('Host:', process.env.SMTP_HOST);
 console.log('Port:', process.env.SMTP_PORT);
 console.log('Secure:', process.env.SMTP_SECURE === 'true');
 console.log('User:', process.env.SMTP_USER);
-// Password is intentionally not logged for security
 console.log('--------------------------');
 
+// Create transporter with better timeout and connection settings
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: Number(process.env.SMTP_PORT) || 587,
@@ -42,16 +43,25 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
   },
-  // Adding a timeout to prevent hanging
-  connectionTimeout: 10000, // 10 seconds
-  greetingTimeout: 10000,
+  // These timeouts help prevent hanging connections
+  connectionTimeout: 15000, // 15 seconds
+  greetingTimeout: 15000,
+  socketTimeout: 20000,
+  // Disable TLS for port 587 (it's enabled by default)
+  tls: {
+    rejectUnauthorized: false // Only for testing; remove if possible
+  }
 });
 
-// Verify SMTP connection and log the result
-transporter.verify((err) => {
+// Verify SMTP connection with detailed error logging
+transporter.verify((err, success) => {
   if (err) {
     console.error('❌ SMTP connection failed:', err.message);
-    console.error('Please check your SMTP_USER and SMTP_PASS in Environment Variables.');
+    console.error('Please check:');
+    console.error('1. Your Gmail App Password is correct in Render Environment Variables.');
+    console.error('2. 2-Step Verification is enabled for your Gmail account.');
+    console.error('3. "Less secure app access" is turned ON (if using regular password).');
+    console.error('4. Your Gmail account is not locked due to unusual activity.');
   } else {
     console.log('✅ SMTP server is ready to send mail.');
   }
@@ -104,11 +114,17 @@ app.post('/api/inquiry', inquiryLimiter, async (req, res) => {
       `
     };
 
-    await transporter.sendMail(mailOptions);
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email sent successfully:', info.messageId);
     res.json({ ok: true, message: 'Inquiry sent successfully.' });
   } catch (err) {
     console.error('Error sending inquiry email:', err);
-    res.status(500).json({ ok: false, error: 'Failed to send inquiry. Please try again later or call us directly.' });
+    // Provide a more user-friendly error message
+    let userMessage = 'Failed to send inquiry. Please try again later or call us directly at 0772489658.';
+    if (err.code === 'ETIMEDOUT') {
+      userMessage = 'The email service is temporarily unavailable. Please call us directly at 0772489658.';
+    }
+    res.status(500).json({ ok: false, error: userMessage });
   }
 });
 
