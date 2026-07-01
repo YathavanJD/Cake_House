@@ -235,6 +235,10 @@
   }
   .submit-btn:hover{background:var(--rose-deep);transform:translateY(-1px);}
   .submit-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
+  .submit-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .whatsapp-btn{background:#25D366;color:#fff;}
+  .whatsapp-btn:hover{background:#1ebe5a;}
+  @media(max-width:460px){.submit-row{grid-template-columns:1fr;}}
   .form-note{font-size:.78rem;color:var(--choc-soft);margin-top:12px;text-align:center;}
   @media(max-width:900px){.contact-wrap{grid-template-columns:1fr;} .about{grid-template-columns:1fr;}}
 
@@ -309,9 +313,8 @@
     <div class="hero-slide"><img src="https://images.unsplash.com/photo-1535141192574-5d4897c12636?q=80&w=1600&auto=format&fit=crop" alt="Wedding icing cake"></div>
     <div class="hero-slide"><img src="https://images.unsplash.com/photo-1486427944299-d1955d23e34d?q=80&w=1600&auto=format&fit=crop" alt="Birthday icing cake"></div>
   </div>
-  <div class="hero-content"><br>
-    <br>
-    <div class="eyebrow">Mannar Rd, Veppankulam · Vavuniya</div>
+  <div class="hero-content">
+    <div class="eyebrow">Mannar Rd, Veppankulam · Vavuniya</div><br>
     <br>
     <h1>Since 2012, <em>25 years</em><br>of combined baking experience.</h1>
     <p>Family-run bakery crafting butter, chocolate, veg &amp; custom icing cakes for every birthday, wedding and everyday celebration.</p>
@@ -328,7 +331,7 @@
   </div>
   <div class="hero-dots" id="heroDots"></div>
 </section>
-
+<br>
 <!-- ===== Bestsellers (bento) ===== -->
 <section class="wrap reveal">
   <div class="sec-head">
@@ -346,7 +349,7 @@
     <div class="bento-card b5"><img src="https://images.unsplash.com/photo-1607478900766-efe13248b125?q=80&w=900&auto=format&fit=crop" alt="Wedding cake"><div class="label">Wedding Icing Cake</div></div>
   </div>
 </section>
-
+<br>
 <!-- ===== About ===== -->
 <section class="wrap" id="about">
   <div class="about reveal">
@@ -367,7 +370,7 @@
     </div>
   </div>
 </section>
-
+<br>
 <!-- ===== Menu ===== -->
 <section class="wrap" id="menu">
   <div class="sec-head reveal">
@@ -505,8 +508,11 @@
           <label for="message">Message</label>
           <textarea id="message" name="message" required placeholder="Tell us the occasion, design idea, quantity/weight, and delivery date..."></textarea>
         </div>
-        <button type="submit" class="submit-btn" id="submitBtn">Send via WhatsApp</button>
-        <p class="form-note">Opens WhatsApp with your details pre-filled — just hit send. No account or backend required.</p>
+        <div class="submit-row">
+          <button type="submit" class="submit-btn" id="emailBtn">Send via Email</button>
+          <button type="button" class="submit-btn whatsapp-btn" id="whatsappBtn">Send via WhatsApp</button>
+        </div>
+        <p class="form-note" id="formNote">Email goes straight to our inbox. WhatsApp opens a pre-filled chat — just hit send.</p>
       </form>
     </div>
   </div>
@@ -663,50 +669,90 @@ function showSnackbar(text) {
 }
 
 /* =====================================================================
-   Contact form — FIXED.
-   The original version POSTed to "/api/inquiry", an endpoint that does
-   not exist anywhere (this is a static page with no backend), so every
-   submission silently failed and always showed the error message.
-   Instead, we build a nicely formatted message from the form fields and
-   hand it straight to WhatsApp, which actually works with no server.
+   Contact form — two ways to send an inquiry:
+   1) Email, via a POST to /api/inquiry (handled by server.js, which now
+      sends through the Resend HTTP API instead of raw SMTP — see the
+      server.js fix notes for why SMTP was the problem).
+   2) WhatsApp, opened client-side with the message pre-filled — needs
+      no backend at all, so it always works even if the email API key
+      is misconfigured.
+   The endpoint is same-origin ("/api/inquiry"), so this only works when
+   the page is served BY server.js itself (e.g. from Render), not when
+   the HTML file is opened directly or hosted separately as a static file.
    ===================================================================== */
 const WHATSAPP_NUMBER = "94772489658"; // international format, no + or leading 0
+const API_ENDPOINT = "/api/inquiry";
+
 const form = document.getElementById('inquiryForm');
-const submitBtn = document.getElementById('submitBtn');
+const emailBtn = document.getElementById('emailBtn');
+const whatsappBtn = document.getElementById('whatsappBtn');
+const formNote = document.getElementById('formNote');
 
-form.addEventListener('submit', (e) => {
-  e.preventDefault();
-
+function getFormData() {
   const name = form.name.value.trim();
   const phone = form.phone.value.trim();
   const cakeType = form.cakeType.value;
   const message = form.message.value.trim();
+  if (!name || !phone || !cakeType || !message) return null;
+  return { name, phone, cakeType, message };
+}
 
-  if (!name || !phone || !cakeType || !message) {
+// ---- Email submit ----
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = getFormData();
+  if (!data) {
     showSnackbar("Please fill in every field before sending.");
     return;
   }
 
-  submitBtn.disabled = true;
-  submitBtn.textContent = "Opening WhatsApp...";
+  emailBtn.disabled = true;
+  whatsappBtn.disabled = true;
+  emailBtn.textContent = "Sending...";
+
+  try {
+    const res = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+
+    if (res.ok && result.ok) {
+      showSnackbar(result.message || "Inquiry sent! We'll be in touch soon.");
+      form.reset();
+    } else {
+      throw new Error(result.error || "Failed to send inquiry");
+    }
+  } catch (err) {
+    console.error(err);
+    showSnackbar("Couldn't reach the server — try WhatsApp instead.");
+  } finally {
+    emailBtn.disabled = false;
+    whatsappBtn.disabled = false;
+    emailBtn.textContent = "Send via Email";
+  }
+});
+
+// ---- WhatsApp submit (no backend needed) ----
+whatsappBtn.addEventListener('click', () => {
+  const data = getFormData();
+  if (!data) {
+    showSnackbar("Please fill in every field before sending.");
+    return;
+  }
 
   const text =
     `Hi Cake House! I'd like to place an inquiry:\n\n` +
-    `Name: ${name}\n` +
-    `Phone: ${phone}\n` +
-    `Cake type: ${cakeType}\n` +
-    `Details: ${message}`;
+    `Name: ${data.name}\n` +
+    `Phone: ${data.phone}\n` +
+    `Cake type: ${data.cakeType}\n` +
+    `Details: ${data.message}`;
 
   const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
   window.open(waUrl, '_blank');
-
   showSnackbar("WhatsApp opened with your inquiry — just hit send!");
   form.reset();
-
-  setTimeout(() => {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Send via WhatsApp";
-  }, 1200);
 });
 </script>
 </body>
