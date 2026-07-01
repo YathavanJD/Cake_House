@@ -69,8 +69,12 @@
   }
   @media(max-width:860px){ .appbar nav{display:none;} }
 
-  /* ===== Hero ===== */
-  .hero{position:relative;min-height:92vh;display:flex;align-items:flex-end;overflow:hidden;}
+  /* ===== Hero =====
+     min-height uses max(92vh, 640px) so the hero always reserves enough
+     room for the eyebrow + heading + buttons — without a floor, a short
+     viewport shrinks the hero and the bottom-anchored content collides
+     with the fixed navbar above it. */
+  .hero{position:relative;min-height:max(92vh, 640px);display:flex;align-items:flex-end;overflow:hidden;}
   .hero-track{position:absolute;inset:0;display:flex;transition:transform 1s cubic-bezier(.65,0,.35,1);}
   .hero-slide{min-width:100%;height:100%;position:relative;}
   .hero-slide img{width:100%;height:100%;object-fit:cover;}
@@ -305,7 +309,7 @@
   </nav>
   <a href="tel:0772489658" class="call-btn">📞 Call Now</a>
 </header>
-  
+
 <!-- ===== Hero ===== -->
 <section class="hero" id="home" style="padding:0;">
   <div class="hero-track" id="heroTrack">
@@ -331,12 +335,11 @@
   <div class="hero-dots" id="heroDots"></div>
 </section>
 
-  <br>
 <!-- ===== Bestsellers (bento) ===== -->
 <section class="wrap reveal">
   <div class="sec-head">
     <div>
-      <div class="eyebrow">Customer favourites</div><br>
+      <div class="eyebrow">Customer favourites</div>
       <h2>Our Bestsellers</h2>
     </div>
     <p>The cakes people keep coming back for — order normal size or in bulk for events.</p>
@@ -349,7 +352,7 @@
     <div class="bento-card b5"><img src="https://images.unsplash.com/photo-1607478900766-efe13248b125?q=80&w=900&auto=format&fit=crop" alt="Wedding cake"><div class="label">Wedding Icing Cake</div></div>
   </div>
 </section>
-<br>
+
 <!-- ===== About ===== -->
 <section class="wrap" id="about">
   <div class="about reveal">
